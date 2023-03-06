@@ -1,4 +1,3 @@
-const { appendFileSync } = require('fs')
 const mojangson = require('mojangson')
 const vsprintf = require('./format')
 
@@ -497,7 +496,7 @@ function loader (registryOrVersion) {
 
         builder += `<span style='white-space: pre; ${style}' ${classes}>${escapeHtml(section.message)}</span>`
       });
-      appendFileSync("index.html", `<br>${builder}`);
+      return builder;
     }
 
     static fromNotch (msg) {
