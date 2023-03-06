@@ -49,6 +49,11 @@ declare class ChatMessage {
   toAnsi(language?: Language): string
 
   /**
+   * Converts the message to HTML with inline styling
+   */
+  toHtml(language?: Language): string
+
+  /**
    * Returns the count of text extras and child ChatMessages.
    * Does not count recursively in to the children.
    */
