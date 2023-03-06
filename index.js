@@ -1,3 +1,4 @@
+const { appendFileSync } = require('fs')
 const mojangson = require('mojangson')
 const vsprintf = require('./format')
 
@@ -6,6 +7,48 @@ module.exports = loader
 function loader (registryOrVersion) {
   const registry = typeof registryOrVersion === 'string' ? require('prismarine-registry')(registryOrVersion) : registryOrVersion
   const defaultLang = registry.language
+  const defaultHexCodes = {
+    '§0': '#000',
+    '§1': '#00a',
+    '§2': '#0a0',
+    '§3': '#0aa',
+    '§4': '#a00',
+    '§5': '#a0a',
+    '§6': '#fa0',
+    '§7': '#aaa',
+    '§8': '#555',
+    '§9': '#55f',
+    '§a': '#5f5',
+    '§b': '#5ff',
+    '§c': '#f55',
+    '§d': '#f5f',
+    '§e': '#ff5',
+    '§f': '#fff'
+  }
+
+  const defaultcssRules = {
+    '§l': {
+      key: 'font-weight',
+      value: 'bold'
+    },
+    '§o': {
+      key: 'font-style',
+      value: 'italic'
+    },
+    '§n': {
+      key: 'text-decoration',
+      value: 'underline'
+    },
+    '§m': {
+      key: 'text-decoration',
+      value: 'line-through'
+    },
+    '§k': {
+      key: 'filter',
+      value: 'blur()'
+    }
+  }
+
   const defaultAnsiCodes = {
     '§0': '\u001b[30m',
     '§1': '\u001b[34m',
@@ -321,7 +364,7 @@ function loader (registryOrVersion) {
         obfuscated: '§k'
       }
 
-      let message = Object.keys(codes).map((code) => {
+      let message = '§r' + Object.keys(codes).map((code) => {
         this[code] = this[code] || parent[code]
         if (!this[code] || this[code] === 'false'/* || this.text === '' */) return null
         if (code === 'color') {
@@ -330,7 +373,7 @@ function loader (registryOrVersion) {
           return codes.color[this.color]
         }
         return codes[code]
-      }).join('')
+      }).join('');
 
       if ((typeof this.text === 'string' || typeof this.text === 'number')/* && this.text !== '' */) message += this.text
       else if (this.translate !== undefined) {
@@ -352,6 +395,8 @@ function loader (registryOrVersion) {
 
     toAnsi (lang = defaultLang, codes = defaultAnsiCodes) {
       let message = this.toMotd(lang)
+      console.log(message);
+      console.log(this.json);
       for (const k in codes) {
         message = message.replace(new RegExp(k, 'g'), codes[k])
       }
@@ -367,6 +412,83 @@ function loader (registryOrVersion) {
         message = message.replace(hexRegex, `\u001b[38;2;${red};${green};${blue}m`)
       }
       return codes['§r'] + message + codes['§r']
+    }
+
+    toHtml (lang = defaultLang, codes = defaultHexCodes, cssRules = defaultcssRules) {
+      let message = this.toMotd(lang);
+      const regex = /(?:§[0-9a-fA-FrR])|(?:§#[a-fA-F0-9]{6})/;
+      const hexRegex = /(?:§#[a-fA-F0-9]{6})/;
+      let match = regex.exec(message);
+      const withColors = [];
+      if(match === null) withColors.push({ message });
+      else if(match.index > 0) withColors.push({ message: message.substring(0, match.index) });
+      while(match !== null) {
+        console.log(match);
+        message = message.substring(match.index + match[0].length);
+        if(match[0].toLowerCase() !== '§r') {
+          const color = hexRegex.exec(match[0]) !== null ? match[0].substring(1) : codes[match[0]];
+          match = regex.exec(message);
+          const section = message.substring(0, match !== null ? match.index : undefined);
+
+          withColors.push({
+            message: section,
+            styles: {
+              color
+            }
+          });
+        } else {
+          withColors.push(false);
+          match = regex.exec(message);
+        }
+      }
+
+      const formatRegex = /§[k-oK-O]/;
+
+      let formatting = {};
+      const withFormatting = [];
+      withColors.forEach(section => {
+        if(!section) {
+          formatting = {};
+          return;
+        }
+
+        const intermediate = [];
+        const color = section.styles?.color;
+
+        let message = section.message;
+        let match = formatRegex.exec(message);
+        if(match === null) intermediate.push({ message, styles: { ...formatting, color } });
+        else if(match.index > 0) intermediate.push({ message: message.substring(0, match.index), styles: { ...formatting, color } });
+
+        while(match !== null) {
+          message = message.substring(match.index + match[0].length);
+          const rule = cssRules[match[0]];
+
+          if(formatting[rule.key]) {
+            const regex = RegExp(rule.value);
+            if(regex.exec(formatting[rule.key]) === null) formatting[rule.key] = `${formatting[rule.key]} ${rule.value}`;
+          } else formatting[rule.key] = rule.value;
+
+          match = formatRegex.exec(message);
+          const section = message.substring(0, match !== null ? match.index : undefined);
+          intermediate.push({ message: section, styles: { ...formatting, color }});
+        }
+        withFormatting.push(...intermediate);
+      });
+
+      let builder = "";
+      withFormatting.forEach(section => {
+        let style = "";
+        if(section.styles) {
+          for(const k in section.styles) {
+            if(!section.styles[k]) continue;
+            style += `${k}: ${section.styles[k]};`;
+          }
+        }
+
+        builder += `<span style='white-space: pre; ${style}'>${escapeHtml(section.message)}</span>`
+      });
+      appendFileSync("index.html", `<br>${builder}`);
     }
 
     static fromNotch (msg) {
@@ -391,4 +513,17 @@ function loader (registryOrVersion) {
 
   ChatMessage.MessageBuilder = MessageBuilder
   return ChatMessage
+}
+
+// Straight from stackoverflow: https://stackoverflow.com/a/30970751
+function escapeHtml(s) {
+  let characters = {
+    '&': "&amp;",
+    '"': "&quot;",
+    '\'': "&apos;",
+    '<': "&lt;",
+    '>': "&gt;"
+  };
+
+  return s.replace(/[&"'<>"]/g, c => characters[c] )
 }
