@@ -26,26 +26,30 @@ function loader (registryOrVersion) {
     '§f': '#fff'
   }
 
-  const defaultcssRules = {
+  const defaultRules = {
     '§l': {
+      type: 0,
       key: 'font-weight',
       value: 'bold'
     },
     '§o': {
+      type: 0,
       key: 'font-style',
       value: 'italic'
     },
     '§n': {
+      type: 0,
       key: 'text-decoration',
       value: 'underline'
     },
     '§m': {
+      type: 0,
       key: 'text-decoration',
       value: 'line-through'
     },
     '§k': {
-      key: 'filter',
-      value: 'blur()'
+      type: 1,
+      name: "obfuscate"
     }
   }
 
@@ -414,7 +418,7 @@ function loader (registryOrVersion) {
       return codes['§r'] + message + codes['§r']
     }
 
-    toHtml (lang = defaultLang, codes = defaultHexCodes, cssRules = defaultcssRules) {
+    toHtml (lang = defaultLang, codes = defaultHexCodes, rules = defaultRules) {
       let message = this.toMotd(lang);
       const regex = /(?:§[0-9a-fA-FrR])|(?:§#[a-fA-F0-9]{6})/;
       const hexRegex = /(?:§#[a-fA-F0-9]{6})/;
@@ -437,8 +441,9 @@ function loader (registryOrVersion) {
             }
           });
         } else {
-          withColors.push(false);
           match = regex.exec(message);
+          const section = message.substring(0, match !== null ? match.index : undefined);
+          withColors.push({ message: section });
         }
       }
 
@@ -447,9 +452,8 @@ function loader (registryOrVersion) {
       let formatting = {};
       const withFormatting = [];
       withColors.forEach(section => {
-        if(!section) {
+        if(!section.styles) {
           formatting = {};
-          return;
         }
 
         const intermediate = [];
@@ -457,21 +461,25 @@ function loader (registryOrVersion) {
 
         let message = section.message;
         let match = formatRegex.exec(message);
-        if(match === null) intermediate.push({ message, styles: { ...formatting, color } });
-        else if(match.index > 0) intermediate.push({ message: message.substring(0, match.index), styles: { ...formatting, color } });
+        if(match === null) intermediate.push({ message, styles: { ...formatting.styles, color }, classes: formatting.classes });
+        else if(match.index > 0) intermediate.push({ message: message.substring(0, match.index), styles: { ...formatting.styles, color }, classes: formatting.classes });
 
         while(match !== null) {
           message = message.substring(match.index + match[0].length);
-          const rule = cssRules[match[0]];
+          const rule = rules[match[0]];
 
-          if(formatting[rule.key]) {
+          if(rule.type === 1) {
+            if(!formatting.classes) formatting.classes = [];
+
+            if(formatting.classes.indexOf(rule.name) < 0) formatting.classes.push(rule.name);
+          } else if(formatting.styles[rule.key]) {
             const regex = RegExp(rule.value);
-            if(regex.exec(formatting[rule.key]) === null) formatting[rule.key] = `${formatting[rule.key]} ${rule.value}`;
-          } else formatting[rule.key] = rule.value;
+            if(regex.exec(formatting.styles[rule.key]) === null) formatting.styles[rule.key] = `${formatting.styles[rule.key]} ${rule.value}`;
+          } else formatting.styles[rule.key] = rule.value;
 
           match = formatRegex.exec(message);
           const section = message.substring(0, match !== null ? match.index : undefined);
-          intermediate.push({ message: section, styles: { ...formatting, color }});
+          intermediate.push({ message: section, styles: { ...formatting.styles, color }, classes: formatting.classes });
         }
         withFormatting.push(...intermediate);
       });
@@ -479,6 +487,7 @@ function loader (registryOrVersion) {
       let builder = "";
       withFormatting.forEach(section => {
         let style = "";
+        let classes = section.classes ? `class=${section.classes.join(" ")}` : '';
         if(section.styles) {
           for(const k in section.styles) {
             if(!section.styles[k]) continue;
@@ -486,7 +495,7 @@ function loader (registryOrVersion) {
           }
         }
 
-        builder += `<span style='white-space: pre; ${style}'>${escapeHtml(section.message)}</span>`
+        builder += `<span style='white-space: pre; ${style}' ${classes}>${escapeHtml(section.message)}</span>`
       });
       appendFileSync("index.html", `<br>${builder}`);
     }
